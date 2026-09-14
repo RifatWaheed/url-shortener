@@ -1,5 +1,5 @@
 CREATE TABLE users (
-    id            BIGSERIAL PRIMARY KEY,
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     email         TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     is_verified   BOOLEAN NOT NULL DEFAULT false,

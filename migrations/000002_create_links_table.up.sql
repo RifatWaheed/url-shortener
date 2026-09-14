@@ -1,5 +1,5 @@
 CREATE TABLE links (
-    id          BIGSERIAL PRIMARY KEY,
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     short_code  VARCHAR(16) NOT NULL UNIQUE,
     long_url    TEXT NOT NULL,
     user_id     BIGINT REFERENCES users(id) ON DELETE CASCADE,
