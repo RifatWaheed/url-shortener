@@ -32,10 +32,14 @@ func main() {
 
 	log.Println("connected to database")
 
+	// =============================================================================//
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/hello", helloApiHandler)
+
+	mux.HandleFunc("POST /shorten", shortenUrlHandler)
+
 	log.Fatal(http.ListenAndServe("127.0.0.1:8080", mux))
 
 }
