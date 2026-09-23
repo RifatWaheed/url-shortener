@@ -2,28 +2,46 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"mime"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
-func ValidateUrl(w http.ResponseWriter, req ShortenRequest) bool {
-	parsed, err := url.Parse(req.Url)
+func ValidateUrl(req ShortenRequest) (bool, error) {
+	parsed, err := url.ParseRequestURI(req.Url)
 	if req.Url == "" {
-		http.Error(w, "url is required", http.StatusBadRequest)
-		return false
+		return false, errors.New("url is required")
 	}
+
+	if len(req.Url) > 2048 {
+		return false, errors.New("url length is too large")
+	}
+
 	if err != nil {
-		http.Error(w, "url is not a valid URL", http.StatusBadRequest)
-		return false
+		return false, errors.New("url is invalid")
 	}
+
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		http.Error(w, "url must use http or https", http.StatusBadRequest)
+		return false, errors.New("url must use http or https")
+	}
+
+	if parsed.Host == "" {
+		return false, errors.New("url must include a host")
+	}
+
+	return true, nil
+}
+
+func isValidShortCode(shortCode string) bool {
+	if len(shortCode) > codeLen {
 		return false
 	}
-	if parsed.Host == "" {
-		http.Error(w, "url must include a host", http.StatusBadRequest)
-		return false
+	for i := 0; i < len(shortCode); i++ {
+		if !strings.ContainsRune(alphabet, rune(shortCode[i])) {
+			return false
+		}
 	}
 
 	return true

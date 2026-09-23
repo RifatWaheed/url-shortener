@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 )
@@ -25,7 +26,8 @@ func (s *Server) shortenUrlHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if isUrlValid := ValidateUrl(w, req); !isUrlValid {
+	if _, err := ValidateUrl(req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -38,10 +40,35 @@ func (s *Server) shortenUrlHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+
 	resp := ShortenResponse{ShortCode: shortCode, ShortURL: s.baseURL + "/" + shortCode}
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		log.Printf("shorten: encode failed: %v", err)
 	}
+}
+
+func (s *Server) redirectHandler(w http.ResponseWriter, r *http.Request) {
+
+	shortCode := r.PathValue("code")
+	if !isValidShortCode(shortCode) {
+		http.NotFound(w, r)
+		return
+	}
+
+	longURL, err := GetLongUrl(r.Context(), s.db, shortCode)
+
+	switch {
+	case errors.Is(err, ErrLinkNotFound):
+		http.NotFound(w, r)
+		return
+	case errors.Is(err, ErrLinkExpired):
+		http.Error(w, "Link Expired", http.StatusGone)
+	case err != nil:
+		log.Printf("redirect : %v", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+	}
+
+	http.Redirect(w, r, longURL, http.StatusFound)
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {

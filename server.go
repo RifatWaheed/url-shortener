@@ -14,9 +14,8 @@ type Server struct {
 func (s *Server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/health", healthHandler)
-
 	mux.HandleFunc("POST /shorten", s.shortenUrlHandler)
+	mux.HandleFunc("GET /{code}", s.redirectHandler)
 
 	return mux
 }
