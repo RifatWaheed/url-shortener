@@ -26,7 +26,7 @@ func (s *Server) shortenUrlHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := ValidateUrl(req); err != nil {
+	if err := ValidateUrl(req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -63,9 +63,11 @@ func (s *Server) redirectHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, ErrLinkExpired):
 		http.Error(w, "Link Expired", http.StatusGone)
+		return
 	case err != nil:
 		log.Printf("redirect : %v", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
 	}
 
 	http.Redirect(w, r, longURL, http.StatusFound)

@@ -9,29 +9,36 @@ import (
 	"strings"
 )
 
-func ValidateUrl(req ShortenRequest) (bool, error) {
-	parsed, err := url.ParseRequestURI(req.Url)
+var ErrUrlEmpty = errors.New("url is required")
+var ErrUrlLengthCapExceeded = errors.New("url length is too large")
+var ErrUrlParsingFailed = errors.New("url is invalid")
+var ErrUrlSchemeNotValid = errors.New("url must use http or https")
+var ErrUrlHostMissing = errors.New("url must include a host")
+
+func ValidateUrl(req ShortenRequest) error {
 	if req.Url == "" {
-		return false, errors.New("url is required")
+		return ErrUrlEmpty
 	}
 
 	if len(req.Url) > 2048 {
-		return false, errors.New("url length is too large")
+		return ErrUrlLengthCapExceeded
 	}
 
+	parsed, err := url.ParseRequestURI(req.Url)
+
 	if err != nil {
-		return false, errors.New("url is invalid")
+		return ErrUrlParsingFailed
 	}
 
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return false, errors.New("url must use http or https")
+		return ErrUrlSchemeNotValid
 	}
 
 	if parsed.Host == "" {
-		return false, errors.New("url must include a host")
+		return ErrUrlHostMissing
 	}
 
-	return true, nil
+	return nil
 }
 
 func isValidShortCode(shortCode string) bool {
