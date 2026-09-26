@@ -50,7 +50,7 @@ func (s *Server) shortenUrlHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) redirectHandler(w http.ResponseWriter, r *http.Request) {
 
 	shortCode := r.PathValue("code")
-	if !isValidShortCode(shortCode) {
+	if err := ValidateShortCode(shortCode); err != nil {
 		http.NotFound(w, r)
 		return
 	}

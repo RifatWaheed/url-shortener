@@ -7,14 +7,12 @@ import (
 const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 const codeLen = 7
 
-func GenerateShortCode() (string, error) {
+func GenerateShortCode() string {
 	code := make([]byte, 0, codeLen)
 	buf := make([]byte, codeLen*2)
 
 	for len(code) < codeLen {
-		if _, err := rand.Read(buf); err != nil {
-			return "", err
-		}
+		rand.Read(buf)
 
 		for _, b := range buf {
 			if b < 248 {
@@ -27,5 +25,5 @@ func GenerateShortCode() (string, error) {
 
 	}
 
-	return string(code), nil
+	return string(code)
 }

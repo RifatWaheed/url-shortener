@@ -9,11 +9,17 @@ import (
 	"strings"
 )
 
-var ErrUrlEmpty = errors.New("url is required")
-var ErrUrlLengthCapExceeded = errors.New("url length is too large")
-var ErrUrlParsingFailed = errors.New("url is invalid")
-var ErrUrlSchemeNotValid = errors.New("url must use http or https")
-var ErrUrlHostMissing = errors.New("url must include a host")
+var (
+	ErrUrlEmpty             = errors.New("url is required")
+	ErrUrlLengthCapExceeded = errors.New("url length is too large")
+	ErrUrlParsingFailed     = errors.New("url is invalid")
+	ErrUrlSchemeNotValid    = errors.New("url must use http or https")
+	ErrUrlHostMissing       = errors.New("url must include a host")
+
+	ErrShortCodeEmptyString       = errors.New("short code can't be empty string")
+	ErrUrlShortCodeLengthExceeded = errors.New("short code length exceeded")
+	ErrShortCodeInvalidCharacter  = errors.New("short code has invalid character")
+)
 
 func ValidateUrl(req ShortenRequest) error {
 	if req.Url == "" {
@@ -41,17 +47,20 @@ func ValidateUrl(req ShortenRequest) error {
 	return nil
 }
 
-func isValidShortCode(shortCode string) bool {
+func ValidateShortCode(shortCode string) error {
+	if len(shortCode) == 0 {
+		return ErrShortCodeEmptyString
+	}
 	if len(shortCode) > codeLen {
-		return false
+		return ErrUrlShortCodeLengthExceeded
 	}
 	for i := 0; i < len(shortCode); i++ {
 		if !strings.ContainsRune(alphabet, rune(shortCode[i])) {
-			return false
+			return ErrShortCodeInvalidCharacter
 		}
 	}
 
-	return true
+	return nil
 }
 
 func DecodeJSONBody[T any](w http.ResponseWriter, r *http.Request) (T, bool) {

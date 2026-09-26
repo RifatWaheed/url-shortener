@@ -18,12 +18,9 @@ var ErrLinkExpired = errors.New("link expired")
 
 func CreateLink(ctx context.Context, db *pgxpool.Pool, longURL string) (string, error) {
 	for range maxCodeAttempts {
-		shortCode, err := GenerateShortCode()
-		if err != nil {
-			return "", err
-		}
+		shortCode := GenerateShortCode()
 
-		_, err = db.Exec(ctx,
+		_, err := db.Exec(ctx,
 			`INSERT INTO links (short_code, long_url) VALUES ($1, $2)`,
 			shortCode, longURL)
 		if err == nil {
