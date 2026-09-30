@@ -34,7 +34,18 @@ func main() {
 
 	// =============================================================================//
 
-	srv := &Server{db: pool, baseURL: "http://127.0.0.1:8080"}
-	log.Fatal(http.ListenAndServe("127.0.0.1:8080", srv.routes()))
+	addr := getEnv("ADDR", "127.0.0.1:8080")
+	baseURL := getEnv("BASE_URL", "http://"+addr)
 
+	srv := &Server{db: pool, baseURL: baseURL}
+	log.Printf("listening on %s", addr)
+	log.Fatal(http.ListenAndServe(addr, srv.routes()))
+
+}
+
+func getEnv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }
