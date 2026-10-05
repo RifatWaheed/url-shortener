@@ -16,9 +16,14 @@ var (
 	ErrUrlSchemeNotValid    = errors.New("url must use http or https")
 	ErrUrlHostMissing       = errors.New("url must include a host")
 
-	ErrShortCodeEmptyString       = errors.New("short code can't be empty string")
-	ErrUrlShortCodeLengthExceeded = errors.New("short code length exceeded")
-	ErrShortCodeInvalidCharacter  = errors.New("short code has invalid character")
+	ErrShortCodeEmptyString      = errors.New("short code can't be empty string")
+	ErrShortCodeLengthExceeded   = errors.New("short code length exceeded")
+	ErrShortCodeInvalidCharacter = errors.New("short code has invalid character")
+
+	ErrBodyContentType     = errors.New("Content-Type must be application/json")
+	ErrBodyTooLarge        = errors.New("request body must not exceed 1MB")
+	ErrBodyInvalidJSON     = errors.New("invalid JSON body")
+	ErrBodyMultipleObjects = errors.New("body must contain a single JSON object")
 )
 
 func ValidateUrl(req ShortenRequest) error {
@@ -52,7 +57,7 @@ func ValidateShortCode(shortCode string) error {
 		return ErrShortCodeEmptyString
 	}
 	if len(shortCode) > codeLen {
-		return ErrUrlShortCodeLengthExceeded
+		return ErrShortCodeLengthExceeded
 	}
 	for i := 0; i < len(shortCode); i++ {
 		if !strings.ContainsRune(alphabet, rune(shortCode[i])) {
@@ -63,12 +68,11 @@ func ValidateShortCode(shortCode string) error {
 	return nil
 }
 
-func DecodeJSONBody[T any](w http.ResponseWriter, r *http.Request) (T, bool) {
+func DecodeJSONBody[T any](w http.ResponseWriter, r *http.Request) (T, error) {
 	var body T
 	contentType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || contentType != "application/json" {
-		http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
-		return body, false
+		return body, ErrBodyContentType
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) //1MB cap so decoder doesn't start decoding any huge body
@@ -77,14 +81,16 @@ func DecodeJSONBody[T any](w http.ResponseWriter, r *http.Request) (T, bool) {
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&body); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
-		return body, false
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			return body, ErrBodyTooLarge
+		}
+
+		return body, ErrBodyInvalidJSON
 	}
 
 	if decoder.More() {
-		http.Error(w, "body must contain a single JSON object", http.StatusBadRequest)
-		return body, false
+		return body, ErrBodyMultipleObjects
 	}
 
-	return body, true
+	return body, nil
 }

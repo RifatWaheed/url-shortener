@@ -109,3 +109,36 @@
 
     After flushing is done it writes a checkpoint record (`Safe Point`) to the `WAL`, so for crash recovery Postgres doesn't need to replay the entire WAL,
     it can start replaying from the last checkpoint.
+
+
+# Isolation Levels :
+            Means : When several transactions run at the same time how much of each other's work they can see
+            Example : Bank Account with a balance 100
+
+            `Dirty Read` : You see a transaction's change before it's committed. Transaction A makes the balance 50 then rolls back , but in the meantime Transaction B read that change and works on the changed value, it couldn't know the transaction A was rolled back.
+
+            `Non Repeatable Read` : Reading the same row twice in a single transaction but getting different results . You read balance 100, B commits balance = 50, you read again and its 50
+
+            `Phantom Read` : You run same query Twice but get different number of rows
+                            SELECT * FROM accounts WHERE balance > 80 returns 3 rows, B inserts and commits a new matching account, and the same query now returns 4.
+
+            `Serialization Anomaly` : each transaction looks fine on its own , but both scenario should not exist if the transaction happened one after another. 
+                            - Rule is atleast 1 doctor must be vacant
+                            - Two doctors are on call 
+                            - Doctor 1 sees 2 is on call and 2 is 1 also on call
+                            - both cut the call and now both of them are vacant
+
+            LEVELS :
+
+                    1. Read Un-Committed :  basically means read before its committed , this causes dirty 
+                                            reads. In Postgres it doesn't happen.
+
+                    2. Read Committed (the default): Read after committed, two transactions may see different
+                                                    as one reads after another is committed.
+
+                    3. Repeatable Read : Whole transaction sees one Frozen snapshot. No changes can be seen
+                                        by you if some else transaction makes a change. Trying to make change
+                                        on a row that has already been changed causes a serialization error by the Porstgres and aborts the transaction
+
+                    4. Serializable : Repeatable Read + Postgres looks for a pattern like the Doctors call example
+                                       and aborts any 1 transaction so the one - at- a time ordering maintains and your app needs be ready for a retry 

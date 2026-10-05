@@ -42,7 +42,9 @@ The app loads a `.env` file from the project root when it starts. `.env` is in `
 |----------|----------|---------|-------------|
 | `DATABASE_URL` | yes | — | Postgres connection string, used by both the app and the migrate commands below |
 | `ADDR` | no | `127.0.0.1:8080` | Host and port the server listens on. Use `:8080` to listen on all interfaces |
-| `BASE_URL` | no | `http://<ADDR>` | Prefix for the `shortUrl` field in responses. Set this to your public domain when the app runs behind a proxy |
+| `BASE_URL` | yes | — | Public URL that short links start with (trailing `/` is stripped). Locally `http://127.0.0.1:8080`; in production the URL users type, e.g. `https://sho.rt`. It isn't derived from `ADDR` because behind a proxy, container or load balancer the two differ |
+
+The app exits at startup if `DATABASE_URL` or `BASE_URL` is unset.
 
 If `.env` is missing, the app logs a warning and falls back to the `DATABASE_URL` already set in your environment.
 

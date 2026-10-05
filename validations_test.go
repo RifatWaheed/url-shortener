@@ -39,10 +39,10 @@ func TestValidateShortCode(t *testing.T) {
 	tests := map[string]testShortCode{
 		"emptyShortCode": {shortCode: "", wantErr: ErrShortCodeEmptyString},
 
-		"shortCodeLengthExceeded": {shortCode: "a" + strings.Repeat("a", 400), wantErr: ErrUrlShortCodeLengthExceeded},
+		"shortCodeLengthExceeded": {shortCode: "a" + strings.Repeat("a", 400), wantErr: ErrShortCodeLengthExceeded},
 		"exactlyAtLimitShortCode": {shortCode: strings.Repeat("a", codeLen), wantErr: nil},
 		"withinLimitShortCode":    {shortCode: strings.Repeat("a", codeLen-1), wantErr: nil},
-		"oneOverLimitShortCode":   {shortCode: "a" + strings.Repeat("a", codeLen), wantErr: ErrUrlShortCodeLengthExceeded},
+		"oneOverLimitShortCode":   {shortCode: "a" + strings.Repeat("a", codeLen), wantErr: ErrShortCodeLengthExceeded},
 
 		"invalidCharHyphen":     {shortCode: "abc-123", wantErr: ErrShortCodeInvalidCharacter},
 		"invalidCharUnderscore": {shortCode: "abc_123", wantErr: ErrShortCodeInvalidCharacter},
