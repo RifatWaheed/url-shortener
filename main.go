@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -13,6 +14,9 @@ import (
 )
 
 func main() {
+
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
 
 	if err := godotenv.Load(); err != nil {
 		log.Printf("unable to find env variables : %v", err)
@@ -52,7 +56,7 @@ func main() {
 
 	srv := &Server{db: pool, baseURL: baseURL}
 	log.Printf("listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, srv.routes()))
+	log.Fatal(http.ListenAndServe(addr, logRequests(srv.routes())))
 
 }
 

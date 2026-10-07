@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 )
 
@@ -20,7 +20,7 @@ func writeJSON(w http.ResponseWriter, status int, resp any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.Printf(" encode failed: %v", err)
+		slog.Error("error encoding", "err", err)
 	}
 }
 
@@ -66,7 +66,7 @@ func writeError(w http.ResponseWriter, err error) {
 	}
 
 	if status >= 500 {
-		log.Printf("%v", err)
+		slog.Error("internal error", err, "status", status, "code", code)
 	}
 
 	writeJSON(w, status, errorResponse{Error: errorBody{Code: code, Message: message}})
