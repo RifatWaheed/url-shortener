@@ -66,7 +66,7 @@ func writeError(w http.ResponseWriter, err error) {
 	}
 
 	if status >= 500 {
-		slog.Error("internal error", err, "status", status, "code", code)
+		slog.Error("internal error", "err", err, "status", status, "code", code)
 	}
 
 	writeJSON(w, status, errorResponse{Error: errorBody{Code: code, Message: message}})
