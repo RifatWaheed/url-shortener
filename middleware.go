@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"time"
 )
 
@@ -28,5 +30,26 @@ func logRequests(next http.Handler) http.Handler {
 			"status", rec.status,
 			"duration_ms", time.Since(start).Milliseconds(),
 		)
+	})
+}
+
+func (rec *statusRecorder) Unwrap() http.ResponseWriter {
+	return rec.ResponseWriter
+}
+
+func recoverPanic(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				if err == http.ErrAbortHandler {
+					panic(err)
+				}
+				slog.Error("panic recovered", "error", err, "stackTrace", string(debug.Stack()))
+				writeError(w, fmt.Errorf("panic : %v", err))
+			}
+		}()
+
+		next.ServeHTTP(w, r)
+
 	})
 }
