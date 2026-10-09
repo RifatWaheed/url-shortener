@@ -10,12 +10,24 @@ import (
 
 type statusRecorder struct {
 	http.ResponseWriter
-	status int
+	status      int
+	wroteHeader bool
 }
 
 func (rec *statusRecorder) WriteHeader(code int) {
-	rec.status = code
+	if !rec.wroteHeader {
+		rec.status = code
+		rec.wroteHeader = true
+	}
+
 	rec.ResponseWriter.WriteHeader(code)
+}
+
+func (rec *statusRecorder) Write(b []byte) (int, error) {
+	if !rec.wroteHeader {
+		rec.WriteHeader(http.StatusOK)
+	}
+	return rec.ResponseWriter.Write(b)
 }
 
 func logRequests(next http.Handler) http.Handler {
@@ -28,7 +40,7 @@ func logRequests(next http.Handler) http.Handler {
 			"request", "method", r.Method,
 			"path", r.URL.Path,
 			"status", rec.status,
-			"duration_ms", time.Since(start).Milliseconds(),
+			"duration_micro_sec", time.Since(start).Microseconds(),
 		)
 	})
 }
