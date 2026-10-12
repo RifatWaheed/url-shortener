@@ -7,7 +7,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -24,6 +26,9 @@ func main() {
 }
 
 func run() error {
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
@@ -44,16 +49,16 @@ func run() error {
 
 	addr := getEnv("ADDR", "127.0.0.1:8080")
 
-	pool, err := pgxpool.New(context.Background(), dbURL)
+	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
 		return fmt.Errorf("create connection pool: %w", err)
 	}
 	defer pool.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	pingCtx, cancelPing := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelPing()
 
-	if err := pool.Ping(ctx); err != nil {
+	if err := pool.Ping(pingCtx); err != nil {
 		return fmt.Errorf("ping database: %w", err)
 	}
 
@@ -77,7 +82,29 @@ func run() error {
 
 	slog.Info("listening on", "addr", addr)
 
-	return httpSrv.ListenAndServe()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- httpSrv.ListenAndServe()
+	}()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		stop()
+		slog.Info("shutdown signal received, draining requests")
+	}
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+
+	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("graceful shutdown: %w", err)
+	}
+
+	slog.Info("server stopped cleanly")
+
+	return nil
 }
 
 func getEnv(key, fallback string) string {

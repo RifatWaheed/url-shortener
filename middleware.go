@@ -56,7 +56,7 @@ func recoverPanic(next http.Handler) http.Handler {
 				if err == http.ErrAbortHandler {
 					panic(err)
 				}
-				slog.Error("panic recovered", "error", err, "stackTrace", string(debug.Stack()))
+				slog.Error("panic recovered", "err", err, "stackTrace", string(debug.Stack()))
 				writeError(w, fmt.Errorf("panic : %v", err))
 			}
 		}()
