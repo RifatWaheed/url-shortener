@@ -67,13 +67,13 @@ func run() error {
 	// =============================================================================//
 
 	srv := &Server{
-		db:      LinkStore,
+		db:      &PostgresStore{db: pool},
 		baseURL: baseURL,
 	}
 
 	httpSrv := &http.Server{
 		Addr:              addr,
-		Handler:           logRequests(recoverPanic(srv.routes())),
+		Handler:           srv.routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
