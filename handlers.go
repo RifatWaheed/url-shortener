@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 )
 
@@ -17,7 +18,12 @@ type ShortenResponse struct {
 	ShortURL  string `json:"shortUrl"`
 }
 
-func (s *Server) shortenUrlHandler(w http.ResponseWriter, r *http.Request) {
+type LinkStore interface {
+	CreateLink(ctx context.Context, longURL string) (string, error)
+	GetLongUrl(ctx context.Context, shortCode string) (string, error)
+}
+
+func (srv *Server) shortenUrlHandler(w http.ResponseWriter, r *http.Request) {
 	req, err := DecodeJSONBody[ShortenRequest](w, r)
 	if err != nil {
 		writeError(w, err)
@@ -29,17 +35,17 @@ func (s *Server) shortenUrlHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shortCode, err := CreateLink(r.Context(), s.db, req.Url)
+	shortCode, err := srv.db.CreateLink(r.Context(), req.Url)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
 
-	resp := ShortenResponse{ShortCode: shortCode, ShortURL: s.baseURL + "/" + shortCode}
+	resp := ShortenResponse{ShortCode: shortCode, ShortURL: srv.baseURL + "/" + shortCode}
 	writeJSON(w, http.StatusCreated, resp)
 }
 
-func (s *Server) redirectHandler(w http.ResponseWriter, r *http.Request) {
+func (srv *Server) redirectHandler(w http.ResponseWriter, r *http.Request) {
 
 	shortCode := r.PathValue("code")
 	if err := ValidateShortCode(shortCode); err != nil {
@@ -47,7 +53,7 @@ func (s *Server) redirectHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	longURL, err := GetLongUrl(r.Context(), s.db, shortCode)
+	longURL, err := srv.db.GetLongUrl(r.Context(), shortCode)
 	if err != nil {
 		writeError(w, err)
 		return

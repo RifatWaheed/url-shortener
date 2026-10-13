@@ -54,7 +54,7 @@ func main() {
 
 	// =============================================================================//
 
-	srv := &Server{db: pool, baseURL: baseURL}
+	srv := &Server{db: &PostgresStore{db: pool}, baseURL: baseURL}
 	log.Printf("listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, logRequests(recoverPanic(srv.routes()))))
 

@@ -2,12 +2,10 @@ package main
 
 import (
 	"net/http"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Server struct {
-	db      *pgxpool.Pool
+	db      LinkStore
 	baseURL string
 }
 
