@@ -14,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -63,6 +64,18 @@ func run() error {
 	}
 
 	slog.Info("connected to database")
+
+	// ==============================================================================//
+
+	redisAddr := getEnv("REDIS_ADDR", "127.0.0.1:6379")
+	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
+	defer rdb.Close()
+
+	if err := rdb.Ping(ctx); err != nil {
+		return fmt.Errorf("ping redis: %s", err)
+	}
+
+	slog.Info("connected to redis")
 
 	// =============================================================================//
 
