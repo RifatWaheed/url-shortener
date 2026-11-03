@@ -13,16 +13,16 @@ import (
 const testBaseURL = "http://test.local"
 
 type fakeStore struct {
-	code    string
-	longURL string
-	err     error
+	code string
+	link Link
+	err  error
 }
 
 func (f *fakeStore) CreateLink(ctx context.Context, longURL string) (string, error) {
 	return f.code, f.err
 }
-func (f *fakeStore) GetLongUrl(ctx context.Context, shortCode string) (string, error) {
-	return f.longURL, f.err
+func (f *fakeStore) GetLink(ctx context.Context, shortCode string) (Link, error) {
+	return f.link, f.err
 }
 
 var _ LinkStore = (*fakeStore)(nil)
@@ -136,7 +136,7 @@ func TestHandlers(t *testing.T) {
 		"GET valid code -> 302": {
 			method:       http.MethodGet,
 			path:         "/abc1234",
-			store:        &fakeStore{longURL: "https://example.com/page"},
+			store:        &fakeStore{link: Link{LongURL: "https://example.com/page"}},
 			wantStatus:   http.StatusFound,
 			wantLocation: "https://example.com/page",
 		},

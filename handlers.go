@@ -20,7 +20,7 @@ type ShortenResponse struct {
 
 type LinkStore interface {
 	CreateLink(ctx context.Context, longURL string) (string, error)
-	GetLongUrl(ctx context.Context, shortCode string) (string, error)
+	GetLink(ctx context.Context, shortCode string) (Link, error)
 }
 
 func (srv *Server) shortenUrlHandler(w http.ResponseWriter, r *http.Request) {
@@ -53,13 +53,13 @@ func (srv *Server) redirectHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	longURL, err := srv.db.GetLongUrl(r.Context(), shortCode)
+	link, err := srv.db.GetLink(r.Context(), shortCode)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
 
-	http.Redirect(w, r, longURL, http.StatusFound)
+	http.Redirect(w, r, link.LongURL, http.StatusFound)
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {

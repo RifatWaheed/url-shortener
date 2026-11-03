@@ -41,22 +41,28 @@ func (pgStore *PostgresStore) CreateLink(ctx context.Context, longURL string) (s
 	return "", ErrCodeExhausted
 }
 
-func (pgStore *PostgresStore) GetLongUrl(ctx context.Context, shortCode string) (string, error) {
-	var longURL string
-	var expires_at *time.Time
+type Link struct {
+	LongURL   string
+	ExpiresAt *time.Time
+}
+
+func (pgStore *PostgresStore) GetLink(ctx context.Context, shortCode string) (Link, error) {
+
+	var link Link
 
 	err := pgStore.db.QueryRow(ctx,
-		`SELECT long_url, expires_at FROM links WHERE short_code = $1 `, shortCode).Scan(&longURL, &expires_at)
+		`SELECT long_url, expires_at FROM links WHERE short_code = $1 `, shortCode).Scan(&link.LongURL, &link.ExpiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", ErrLinkNotFound
+		return Link{}, ErrLinkNotFound
 	}
+
 	if err != nil {
-		return "", err
+		return Link{}, err
 	}
 
-	if expires_at != nil && time.Now().After(*expires_at) {
-		return "", ErrLinkExpired
+	if link.ExpiresAt != nil && time.Now().After(*link.ExpiresAt) {
+		return Link{}, ErrLinkExpired
 	}
 
-	return longURL, nil
+	return link, nil
 }
