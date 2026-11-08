@@ -79,8 +79,14 @@ func run() error {
 
 	// =============================================================================//
 
+	var cachedStore CachedStore
+	cachedStore.LinkStore = &PostgresStore{db: pool}
+	cachedStore.redisClient = rdb
+	cachedStore.ttl = 24 * time.Hour
+	cachedStore.linkNotFoundTTL = 60 * time.Second
+
 	srv := &Server{
-		db:      &PostgresStore{db: pool},
+		db:      &cachedStore,
 		baseURL: baseURL,
 	}
 

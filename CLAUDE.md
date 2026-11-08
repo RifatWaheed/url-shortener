@@ -17,6 +17,8 @@ learns by building, so most of each reply should be about what to build next.
 
 **Along with telling the learner what to build next give him the pre-requisites what to study before start coding or building.
 
+**When telling to fix a part of code always mention the file name and line number
+
 **Don't block on questions.** If the learner can't answer or wants to move on,
 give the answer in a line or two and continue. Don't re-ask. Open questions in
 the notes are handled at the end of the entire project.
@@ -25,6 +27,8 @@ the notes are handled at the end of the entire project.
 summarise in 3–5 bullets how it answers the matching interview question.
 
 no need to revisit open questions if skipped, these will be handled at the end.
+
+**No side experiments.** Don't assign measurement experiments, benchmarks, or alternative implementations built only to compare approaches. Build time goes to the week's main deliverable. When a plan item is about comparing approaches or tradeoffs, explain it and write the answer into that week's notes instead.
 
 Don't press on things which are not very technical , like writing README.md files which can be written by Ai directly and doesn't test any technical skills
 
@@ -147,8 +151,8 @@ You build it in layers. Each layer teaches a named skill and maps to a real inte
 ### Week 4 — Caching + the "design TinyURL" story
 - **Mon:** Caching concepts: cache-aside, TTL, invalidation, thundering herd.
 - **Tue:** Add Redis. Cache the code→URL lookup on redirects.
-- **Wed:** Measure it: latency with vs without cache. Record numbers (you'll cite these in interviews).
-- **Thu:** Handle collisions and code generation at scale (counter vs random vs hash — tradeoffs).
+- **Wed:** Finish the cache layer (negative-cache handling, config for TTLs).
+- **Thu:** Code generation at scale (counter vs random vs hash). Claude explains the tradeoffs in the notes; nothing extra is built.
 - **Fri:** DSA: stacks/queues (2 problems).
 - **Sat:** Write up "Design TinyURL" as if answering it live — capacity estimation, schema, caching, scaling reads. Base it on *your* implementation.
 - **Sun:** Buffer / catch-up day. Push.
