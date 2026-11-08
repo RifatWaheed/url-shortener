@@ -71,8 +71,8 @@ func run() error {
 	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
 	defer rdb.Close()
 
-	if err := rdb.Ping(ctx); err != nil {
-		return fmt.Errorf("ping redis: %s", err)
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		return fmt.Errorf("ping redis: %w", err)
 	}
 
 	slog.Info("connected to redis")
