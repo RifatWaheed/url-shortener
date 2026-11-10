@@ -1,6 +1,6 @@
 # Week 5 Progress — Docker
 
-**Where I stopped (2026-11-09, office PC):** Week 5 **Monday**, partway through. The image builds and is small. **Next is running the app inside the container** (Step 1 under "Continue here" below).
+**Where I stopped (2026-11-10):** Week 5 **Monday is DONE** (app runs in a container, all checks passed, graceful shutdown verified). **Next is Tuesday: `docker-compose.yml`** (see "After Monday" below).
 
 ---
 
@@ -121,17 +121,17 @@ In the first window you want **`shutdown signal received`** then **`server stopp
 
 ## Monday is done when
 
-- [ ] Container logs show connected to database, connected to redis, listening on 0.0.0.0:8080
-- [ ] `/health`, `POST /shorten` and the redirect all work from Windows
-- [ ] `docker stop` produces "server stopped cleanly" almost instantly
-- [ ] Results of the above reported back to Claude (logs or errors)
+- [x] Container logs show connected to database, connected to redis, listening on 0.0.0.0:8080
+- [x] `/health`, `POST /shorten` and the redirect all work from Windows
+- [x] `docker stop` produces "server stopped cleanly" almost instantly
+- [x] Results of the above reported back to Claude (logs or errors)
 
 ## After Monday
 
 - **Tuesday:** `docker-compose.yml` brings up API + Postgres + Redis with one command (replaces the long `docker run` commands; `env_file:` replaces `--env-file`; containers reach each other by **service name** instead of `host.docker.internal`).
 - **Wednesday:** volumes, networks, healthchecks.
 - **Thursday:** image size, `scratch` vs distroless vs alpine, `-ldflags="-s -w"`.
-- I still need to write my own `week5-notes.md` (image vs container, layers/caching, multi-stage, exec vs shell form, localhost-inside-a-container).
+- `week5-notes.md` is written (build/tags, layers, why image IDs change, build cache, multi-stage, `docker run` flags, localhost-inside-a-container, exec form). Study it before the Week 5 viva.
 
 ## Useful commands
 
