@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: snip_dev  # throwaway password
+      POSTGRES_DB: url_shortener
+    ports:
+      - "127.0.0.1:5433:5432"
+  
+  redis:
+    image: redis:8-alpine
+
+  
+  migrate:
+    image: migrate/migrate:v4.20.1
+    volumes:
+      - ./migrations:/migrations
+    command: ["-path", "/migrations", "-database", "postgres://postgres:snip_dev@postgres:5432/url_shortener?sslmode=disable", "up"]
+    depends_on:
+      - postgres
+    restart: on-failure
+
+
+  api:
+    build: .
+    image: snip-api
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://postgres:snip_dev@postgres:5432/url_shortener?sslmode=disable
+      REDIS_ADDR: redis:6379
+      ADDR: 0.0.0.0:8080
+      BASE_URL: http://localhost:8080
+    depends_on:
+      - postgres
+      - redis
+      - migrate
+    restart: on-failure

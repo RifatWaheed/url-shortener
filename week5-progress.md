@@ -1,145 +1,96 @@
 # Week 5 Progress — Docker
 
-**Where I stopped (2026-11-10):** Week 5 **Monday is DONE** (app runs in a container, all checks passed, graceful shutdown verified). **Next is Tuesday: `docker-compose.yml`** (see "After Monday" below).
+**Where I stopped (2026-11-11):** Week 5 **Monday and Tuesday are DONE**. `docker compose up` brings up the whole stack (API + Postgres + Redis + migrations). **Next is Wednesday: volumes, networks, healthchecks.** It fixes the two gaps found on Tuesday (see "Continue here").
 
 ---
 
 ## Done so far
 
+### Monday: the app in a container
+
 | What | Result |
 |---|---|
 | Docker Desktop installed (WSL 2 backend) | `docker version` shows Client + Server |
-| `.dockerignore` | Excludes `.env`, `*.exe`, `.git`, `.env.docker`. Verified `.env` was NOT copied into the image |
-| `Dockerfile` stage 1 (build) | Compiles a static binary at `/bin/snip` (18.7 MB) |
-| `Dockerfile` stage 2 (runtime) | Copies only the binary into `alpine:3.24` |
-| Image size | **804 MB → 41 MB** (13.1 MB compressed) after adding stage 2 |
-| Checked inside final image | `/app` doesn't exist (source, tests, notes are left behind); `/bin/snip` is there |
+| `.dockerignore` | Excludes `.env`, `*.exe`, `*.md`, `.git`, `.env.docker`. Verified `.env` was NOT copied into the image |
+| `Dockerfile` stage 1 (build) | Compiles a static binary at `/bin/snip` |
+| `Dockerfile` stage 2 (runtime) | `alpine:3.24` + non-root user + only the binary |
+| Image size | **804 MB → 41 MB** (13.1 MB compressed) |
+| `docker run` against Windows Postgres + a Redis container | Works through `host.docker.internal`; graceful shutdown verified |
+
+### Tuesday: `docker-compose.yml`
+
+| Service | Image | What it does | Published? |
+|---|---|---|---|
+| `postgres` | `postgres:18-alpine` | Database. `POSTGRES_USER/PASSWORD/DB` create the user and the `url_shortener` DB on first start | `127.0.0.1:5433→5432` (pgAdmin only, this PC only) |
+| `redis` | `redis:8-alpine` | Cache | **No** (hallway only) |
+| `migrate` | `migrate/migrate:v4.20.1` | One-shot job: runs `migrations/` against Postgres, then exits 0 | No |
+| `api` | `snip-api` (`build: .`) | My Go app | `8080→8080` |
+
+Verified:
+- `docker compose ps` shows postgres/redis running; `migrate` shows `Exited (0)` in `ps -a`.
+- `\dt` shows 4 tables + `schema_migrations`. Running `migrate` a second time prints `no change` (idempotent).
+- API logs: connected to database, connected to redis, listening on `0.0.0.0:8080`.
+- `/health`, `POST /shorten` and the redirect (`302` + `Location`) work from Windows.
+- The new link is in the **container's** Postgres, not the Windows one (checked in pgAdmin).
+- Took `.env.docker` out of git (`.gitignore` line 3 + `git rm --cached`). It held my real Windows Postgres password.
+
+### Two gaps found on Tuesday (Wednesday fixes them)
+
+1. **No persistence.** After `docker compose down` + `up`, the `links` table was empty (`0 rows`). The data lived inside the Postgres container and was removed with it. Fix: a **named volume**.
+2. **Startup race.** From a cold start the API crashed 4 times with `connection refused` (Postgres still booting) before connecting about 3 s later. `depends_on` only waits for the container to *start*, and `main.go:59-63` pings once and exits. `restart: on-failure` hides it, but a wrong password would crash-loop forever. Fix: a **healthcheck** + `depends_on: condition: service_healthy`.
 
 ## Decisions made (and why)
 
-- **Builder `golang:1.27-alpine`**: the Go in the image must be **at least** the `go` version in go.mod (1.26.6). Never use `tip` (unreleased dev Go).
-- **`WORKDIR /app`**: every later `RUN`/`COPY` runs in that folder. My first attempt didn't have it, so `go mod download` couldn't find go.mod.
-- **Copy go.mod/go.sum → `go mod download` → then `COPY . .`**: layer caching. Editing a `.go` file doesn't re-download libraries.
-- **`CGO_ENABLED=0`**: a fully self-contained binary that needs no C library at runtime, so it can run on tiny or empty base images. All my deps (pgx, go-redis, godotenv) are pure Go.
-- **Multi-stage**: stage 1 is the "kitchen" (Go toolchain, source); stage 2 is the "box" (just the binary). Only the last stage becomes the image.
-- **Runtime base `alpine:3.24`**: small, but still has a shell and `ls` for debugging. `scratch`/distroless is revisited on **Thursday** (smaller, but no shell; scratch also has no CA certs, which matters for TLS to managed Postgres in Week 7).
-- **Non-root user (`adduser -D -u 10001 appuser` + `USER appuser`)**: if the app is ever exploited, the attacker isn't root.
-- **`ENTRYPOINT ["/bin/snip"]` (exec form, brackets)**: `docker stop` sends SIGTERM straight to my program, which handles it at `main.go:31` (graceful shutdown). In shell form, a shell sits in the middle and doesn't pass the signal on, so Docker force-kills after 10 s.
-- **Config comes from env vars, not `.env`, inside containers.** The warning "unable to find env variables" at startup is expected.
+- **Builder `golang:1.27-alpine`**: must be at least the `go` version in go.mod.
+- **Copy go.mod/go.sum → `go mod download` → `COPY . .`**: layer caching (stable first, changing last).
+- **`CGO_ENABLED=0`**: static binary, runs on tiny bases.
+- **Non-root user, exec-form `ENTRYPOINT`**: limits damage if exploited; SIGTERM reaches the app for graceful shutdown.
+- **Pinned major versions** (`postgres:18-alpine`, `redis:8-alpine`): get patch updates, never an accidental major jump. `migrate` is pinned to an exact release, `v4.20.1`.
+- **Plain tag, not `-amd64`/`-arm64`**: the plain tag is a manifest list, so Docker picks the right CPU variant.
+- **Only the API is published.** Postgres is bound to `127.0.0.1` for pgAdmin. Redis isn't published: no auth by default, and anyone who can write to it can poison the cache and redirect my users.
+- **Migrations as a separate one-shot service**, not in Postgres's `/docker-entrypoint-initdb.d`. initdb runs every `.sql` file alphabetically, so the `.down.sql` files would run too, and it only runs on an empty data folder.
+- **Dev-only throwaway password (`snip_dev`) written in the compose file.** It's acceptable because the DB only exists inside Docker on my laptop. My real Windows password stays out of git.
+- **Config in `environment:`**, not in the image. The same `snip-api` image runs everywhere.
+- **`restart: on-failure`** is a temporary patch for the race, to be replaced Wednesday.
 
 ---
 
-## Setting up the home PC first
+## Setting up the home PC
+
+Much simpler now. Windows Postgres and `.env.docker` are **not needed** for the Docker stack.
 
 1. `git pull`
-2. Install **Docker Desktop** (WSL 2 backend) if it isn't installed. Open it and wait for **"Engine running"**. Check with `docker version`: there must be a **Server:** section.
-3. Make sure **Postgres** is running at home and the `url_shortener` database has its tables. If it's a fresh database, run the migrations (see README):
-   ```powershell
-   migrate -path migrations -database "postgres://postgres:YOUR_PASSWORD@localhost:5432/url_shortener?sslmode=disable" up
+2. Docker Desktop open, showing **"Engine running"**.
+3. ```powershell
+   docker compose up --build -d
+   docker compose ps -a
+   docker compose logs api
    ```
-4. Rebuild the image (images don't travel through git; only the Dockerfile does):
-   ```powershell
-   docker build -t snip-api .
-   docker images snip-api        # expect ~41 MB
-   ```
+4. Test with `curl.exe http://localhost:8080/health`.
 
 ---
 
-## Continue here: run the app inside the container
+## Continue here: Wednesday (volumes, networks, healthchecks)
 
-### The key idea: what "localhost" means
+1. **Named volume for Postgres** so data survives `down`/`up`. Then repeat Tuesday's experiment and the link should still be there. Learn `docker compose down` vs `down -v`. Note: from version 18, the Postgres image keeps its data under `/var/lib/postgresql`. Check the Docker Hub page for the exact path to mount.
+2. **Healthcheck on Postgres** (`pg_isready`) and Redis (`redis-cli ping`).
+3. **`depends_on` with conditions**: `migrate` waits for `service_healthy` Postgres; `api` waits for `service_completed_successfully` migrate + healthy Postgres/Redis. Then try removing `restart: on-failure` and confirm the cold start shows **zero** `connection refused` errors.
+4. **Networks**: what the default network gives you, and when you'd split into several networks.
 
-**Every container is its own little computer.** `localhost` / `127.0.0.1` always means "**me**, this same computer."
-
-- Inside the container, `localhost:5432` looks for Postgres **inside the container**, where it doesn't exist. Use **`host.docker.internal`**, Docker Desktop's name for "the Windows machine I'm running on."
-- **Bug in the other direction, `main.go:51`:** `ADDR` defaults to `127.0.0.1:8080`, meaning "only accept visitors from inside this same computer." Requests from Windows come in from *outside* the container through Docker's port forwarding, so the app would ignore them. Listen on **`0.0.0.0:8080`** ("accept visitors from anywhere"). Fix it through config (the env var), not code; `127.0.0.1` stays the safe default for laptop runs.
-
-| Setting | On Windows (`.env`) | Inside the container (`.env.docker`) |
-|---|---|---|
-| Postgres host | `localhost` | `host.docker.internal` |
-| Redis address | `127.0.0.1:6379` | `host.docker.internal:6379` |
-| Listen address | `127.0.0.1:8080` | `0.0.0.0:8080` |
-| BASE_URL | `http://127.0.0.1:8080` | `http://localhost:8080` (what the *user* on Windows sees) |
-
-### Step 1: Start Redis in a container
-
-```powershell
-docker run -d --name snip-redis -p 6379:6379 redis:8-alpine
-docker ps          # snip-redis should show "Up"
-```
-- `-d` runs it in the background · `--name` names it · `-p WINDOWS_PORT:CONTAINER_PORT` · `redis:8-alpine` is the image.
-- If you get "name already in use" (e.g. after a restart): `docker start snip-redis`.
-
-### Step 2: Create `.env.docker` in the project root
-
-It's already in `.gitignore` and `.dockerignore`, so it never gets committed or baked into the image. Create it again on each machine:
-
-```
-DATABASE_URL=postgres://postgres:YOUR_PASSWORD@host.docker.internal:5432/url_shortener?sslmode=disable
-REDIS_ADDR=host.docker.internal:6379
-ADDR=0.0.0.0:8080
-BASE_URL=http://localhost:8080
-```
-Rules: **no quotes**, **no spaces around `=`**.
-
-### Step 3: Run the app container
-
-```powershell
-docker run --rm --name snip-api -p 8080:8080 --env-file .env.docker snip-api
-```
-- `--rm` deletes the container when it stops (the image stays) · `-p 8080:8080` maps Windows port 8080 to the container's 8080 · `--env-file` loads settings.
-
-**Expected logs (JSON):**
-1. warning: unable to find env variables (**expected**: there's no `.env` in the image on purpose)
-2. `connected to database`
-3. `connected to redis`
-4. `listening on ... 0.0.0.0:8080`
-
-If you see `pg_hba.conf` or `password authentication failed`: that's a Postgres permission setting. Paste the exact error into the next session.
-
-### Step 4: Test from a **second** PowerShell window
-
-```powershell
-curl.exe http://localhost:8080/health
-```
-```powershell
-Invoke-RestMethod -Method Post -Uri http://localhost:8080/shorten -ContentType 'application/json' -Body '{"url":"https://example.com"}'
-```
-```powershell
-curl.exe -i http://localhost:8080/PUT_CODE_HERE     # expect 302 + Location: https://example.com
-```
-(Use `curl.exe`, not `curl`. In PowerShell 5.1, `curl` is an alias for `Invoke-WebRequest`.) The first window should log each request.
-
-### Step 5: Test graceful shutdown
-
-```powershell
-docker stop snip-api
-```
-In the first window you want **`shutdown signal received`** then **`server stopped cleanly`**, almost instantly. If it hangs about 10 s and dies without those lines, the signal isn't reaching the program. Bring that to the next session.
+Then **Thursday**: image size (`scratch` vs distroless vs alpine, `-ldflags="-s -w"`).
 
 ---
-
-## Monday is done when
-
-- [x] Container logs show connected to database, connected to redis, listening on 0.0.0.0:8080
-- [x] `/health`, `POST /shorten` and the redirect all work from Windows
-- [x] `docker stop` produces "server stopped cleanly" almost instantly
-- [x] Results of the above reported back to Claude (logs or errors)
-
-## After Monday
-
-- **Tuesday:** `docker-compose.yml` brings up API + Postgres + Redis with one command (replaces the long `docker run` commands; `env_file:` replaces `--env-file`; containers reach each other by **service name** instead of `host.docker.internal`).
-- **Wednesday:** volumes, networks, healthchecks.
-- **Thursday:** image size, `scratch` vs distroless vs alpine, `-ldflags="-s -w"`.
-- `week5-notes.md` is written (build/tags, layers, why image IDs change, build cache, multi-stage, `docker run` flags, localhost-inside-a-container, exec form). Study it before the Week 5 viva.
 
 ## Useful commands
 
 | Command | What it does |
 |---|---|
-| `docker ps` / `docker ps -a` | Running containers / all containers |
-| `docker images` | Images on this machine |
-| `docker logs snip-redis` | Logs of a background container |
-| `docker stop <name>` / `docker start <name>` | Stop / start a container |
-| `docker rm <name>` | Delete a stopped container |
-| `docker run --rm --entrypoint ls snip-api -la /bin` | Look inside the image without starting the app |
+| `docker compose config` | Validate the file and print it fully expanded |
+| `docker compose up --build -d` | Build the API image and start everything in the background |
+| `docker compose up migrate` | Run one service in the foreground and see its output |
+| `docker compose ps` / `ps -a` | Running services / including exited ones (like `migrate`) |
+| `docker compose logs api` / `logs -f api` | API logs / keep following them (Ctrl+C stops following) |
+| `docker compose exec redis redis-cli ping` | Run a command inside a running container |
+| `docker compose exec postgres psql -U postgres -d url_shortener -P pager=off -c "\dt"` | SQL inside the container's Postgres (`-P pager=off` stops `--More--`) |
+| `docker compose down` | Stop and **remove** containers + network |
+| `docker images` / `docker ps -a` | Images / all containers on this machine |

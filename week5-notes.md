@@ -188,6 +188,89 @@ Ans: Containers run as root by default. If the app is ever exploited, the attack
 
 ---
 
+## 10. Docker Compose basics
+
+**Q: What does Docker Compose do that `docker run` doesn't?**
+Ans: It describes the whole stack (several containers, how they're configured and how they connect) in one file, `docker-compose.yml`, and starts it with one command, `docker compose up`. Instead of typing four long `docker run` commands in the right order with the right flags, the file *is* the documentation of how the system runs. Compose also creates a private network for the project automatically.
+
+**Q: What are the three kinds of names in a compose file?**
+Ans:
+| Kind | Examples | Who chooses | What happens with a typo |
+|---|---|---|---|
+| Compose keywords | `services`, `image`, `build`, `ports`, `environment`, `depends_on`, `restart`, `volumes`, `command` | Docker (fixed) | **Loud**: `docker compose config` rejects the file |
+| Service names | `postgres`, `redis`, `migrate`, `api` | Me | They also become **hostnames** on the network, so every URL that uses them has to change too |
+| Env var names | `DATABASE_URL`, `REDIS_ADDR` (my Go code); `POSTGRES_PASSWORD` (the Postgres image) | The program that reads them | **Quiet**: Compose sets a variable nobody reads, and the app silently uses its default |
+
+Follow-up: *Does the order of keys or services matter?*
+Ans: No. YAML mappings have no order (`docker compose config` even sorts them alphabetically), and start order comes from `depends_on`, not from the file. **Indentation** matters, because it decides what belongs to what. Order *inside* a `command:` list matters, because those are program arguments.
+
+**Q: `image:` vs `build:`?**
+Ans: `image:` pulls a ready-made image from a registry. `build: .` builds one from my Dockerfile (the `.` is the build context). With both, Compose builds from the Dockerfile and names the result with `image:` (`snip-api`). `docker compose up --build` forces a rebuild, so code changes are picked up.
+
+**Q: Why pin `postgres:18-alpine` instead of `postgres`?**
+Ans: No tag means `:latest`, which moves. One day it could jump from Postgres 18 to 19, and a data folder created by 18 won't start under 19 without an upgrade step. Pinning the major version gives me patch and security updates but never a surprise breaking change. Pinning an exact version (`v4.20.1`) is fully reproducible, but I have to bump it myself.
+
+Follow-up: *Why `migrate/migrate:v4.20.1` and not `v4.20.1-amd64`?*
+Ans: The plain tag is a **manifest list** that points to both the amd64 and arm64 builds. Docker picks the one matching the machine, so the same compose file works on an Intel PC and an ARM Mac.
+
+---
+
+## 11. Compose networking: service names as hostnames
+
+**Q: How does the API container find Postgres?**
+Ans: Compose puts every service on a default network (`url-shortener_default`) with **built-in DNS**. The service name *is* the hostname, so the API connects to `postgres:5432` and `redis:6379`. In my cold-start logs I could see the name resolve: `172.18.0.2:5432 (postgres)`.
+Analogy: the containers are apartments in one building, and the network is the internal hallway. Neighbours find each other by the name on the door.
+
+**Q: Postgres is published as `5433:5432`. Which port does the API use?**
+Ans: **5432**, the container's own port. `5433` only exists on the Windows side; it's the front door from the street. Containers talk to each other directly over the network and never go through published ports.
+
+Follow-up: *Then why is `BASE_URL` still `http://localhost:8080`?*
+Ans: `BASE_URL` is for the **user's browser** on Windows, which is outside the building. Service names only work inside the Compose network.
+
+---
+
+## 12. Publishing ports, and why only the API is published
+
+**Q: What does "publishing a port" mean?**
+Ans: Mapping a port on the host to a port in a container: `ports:` in compose, `-p` in `docker run`. Without it, a container can only be reached by other containers on its network. Analogy: `ports:` cuts a front door from the street (Windows, the LAN) into one apartment. In `docker compose ps`, an arrow (`127.0.0.1:5433->5432/tcp`) means published; a bare `6379/tcp` means hallway only.
+
+**Q: What does the `127.0.0.1:` prefix in `"127.0.0.1:5433:5432"` do?**
+Ans: It binds the published port to the host's loopback only, so just my own PC can connect. Without it, Docker binds to `0.0.0.0`: every interface, so anyone on the same Wi-Fi can connect. On Linux servers, Docker's own firewall rules can even let published ports bypass `ufw`.
+
+**Q: Why isn't Redis published?**
+Ans: Only the API needs it, and the API is inside the network. Redis has no password by default, and the official image turns protected mode off because it relies on network isolation. Anyone who can reach it can `SET` one of my short codes to an attacker's URL. Postgres stays correct, but every visitor is redirected to the attacker's site until the TTL expires: **cache poisoning**. Rule: expose only what something outside actually needs (minimize the attack surface). To look inside Redis I use `docker compose exec redis redis-cli`, which doesn't need a port.
+
+---
+
+## 13. Migrations as a one-shot service
+
+**Q: How do the tables get created in the Compose Postgres?**
+Ans: A `migrate` service using the `migrate/migrate` image. It bind-mounts `./migrations` to `/migrations`, runs `-path /migrations -database postgres://...@postgres:5432/... up`, and exits with code 0. A service that runs once and exits is normal; `Exited (0)` means the job succeeded. Because the image's `ENTRYPOINT` is already `migrate`, `command:` holds only the arguments, written as a list (exec form, no shell in between).
+
+**Q: What's the `schema_migrations` table?**
+Ans: The tool's logbook. It stores the latest applied version and a `dirty` flag. On a rerun, `migrate` sees it's already at version 4 and prints `no change`. That makes migrations **idempotent**, so they're safe to run on every `docker compose up` and on every deploy. If a migration fails halfway, `dirty = true` blocks further runs until a human checks the database.
+
+**Q: Why not mount `migrations/` into Postgres's `/docker-entrypoint-initdb.d`?**
+Ans: Two problems. It runs **every** `.sql` file in alphabetical order, so `000001_..._users_table.down.sql` runs before its `.up.sql`. The `DROP TABLE` fails on an empty database and initialization aborts. It also only runs when the data folder is empty, so it can never apply a *new* migration to an existing database. A real migration tool tracks versions; initdb doesn't.
+
+---
+
+## 14. What Tuesday exposed: data loss and the startup race
+
+**Q: I created a link, ran `docker compose down` then `up`, and the `links` table was empty. Why?**
+Ans: `down` stops **and removes** the containers. Postgres kept its data files inside its own container, so they were removed with it. `up` created a fresh, empty Postgres, and `migrate` rebuilt the empty tables. Analogy: demolishing the apartment throws out the furniture. The fix is a **named volume** (Wednesday), which works like a storage unit outside the building.
+
+**Q: On a cold start the API logged `connection refused` 4 times, then connected. Explain.**
+Ans: `depends_on: [postgres]` only waits for the Postgres **container to start**, not for the database to be **ready to accept connections**. Postgres needed about 3 s to boot. My app pings once (`main.go:59-63`) and exits on failure. `restart: on-failure` restarted it until Postgres was up. `connection refused` (rather than a DNS error) told me the address was right and nobody was listening yet.
+
+Follow-up: *Why is `restart: on-failure` a poor fix?*
+Ans: It can't tell "not ready yet" from "actually broken". With a wrong password the API would crash-loop forever and flood the logs. It also makes startup order a matter of luck. The proper fix (Wednesday): a **healthcheck** on Postgres (`pg_isready`) and `depends_on: condition: service_healthy`, so dependents wait instead of crashing.
+
+**Q: Why was `.env.docker` taken out of git, but a password is written in `docker-compose.yml`?**
+Ans: `.env.docker` held the password of my **real** Windows Postgres. `snip_dev` is a throwaway credential for a database that only exists inside Docker on my laptop and is used nowhere else, which is a normal tradeoff for local dev stacks. `.gitignore` only affects untracked files, so a file already committed also needs `git rm --cached`. In a real system, a secret that reached a remote counts as leaked: **rotate it**; deleting it from history isn't enough.
+
+---
+
 ## Interview summary
 
 - **Images are stacks of content-addressed layers plus a config; containers are running instances with a thin writable layer.** Identical layers are stored once and shared.
@@ -195,3 +278,7 @@ Ans: Containers run as root by default. If the app is ever exploited, the attack
 - **A different image ID doesn't always mean different contents.** BuildKit's provenance attestation changes the manifest-list digest on every build; compare `RootFS.Layers` instead.
 - **Cache order: stable first, frequently changing last**, and keep the build context lean with `.dockerignore`.
 - **Inside a container, `localhost` is the container itself**: reach the host with `host.docker.internal` (later, other containers by service name), and listen on `0.0.0.0` so published ports work.
+- **`docker compose up` brings up the whole stack** (API, Postgres, Redis, a one-shot migration job), each image pinned. Services reach each other by **service name** through Compose's built-in DNS.
+- **Publish only what the outside needs**: the API on 8080, Postgres bound to `127.0.0.1` for dev tools, Redis not at all (no auth, and a poisoned cache redirects real users).
+- **Migrations run as a separate one-shot container.** `schema_migrations` makes reruns a no-op, and the dirty flag blocks after a partial failure.
+- **`depends_on` alone means "started", not "ready".** I saw the race myself (4× `connection refused`). Healthchecks + `condition: service_healthy` fix it; named volumes fix the data loss on `down`.
