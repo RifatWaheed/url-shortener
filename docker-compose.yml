@@ -1,5 +1,7 @@
 services:
   postgres:
+    volumes:
+      - pgdata:/var/lib/postgresql
     image: postgres:18-alpine
     environment:
       POSTGRES_USER: postgres
@@ -7,9 +9,21 @@ services:
       POSTGRES_DB: url_shortener
     ports:
       - "127.0.0.1:5433:5432"
-  
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "localhost", "-U", "postgres", "-d", "url_shortener"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
   redis:
     image: redis:8-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 2s
 
   
   migrate:
@@ -18,9 +32,8 @@ services:
       - ./migrations:/migrations
     command: ["-path", "/migrations", "-database", "postgres://postgres:snip_dev@postgres:5432/url_shortener?sslmode=disable", "up"]
     depends_on:
-      - postgres
-    restart: on-failure
-
+      postgres:
+        condition: service_healthy
 
   api:
     build: .
@@ -33,7 +46,14 @@ services:
       ADDR: 0.0.0.0:8080
       BASE_URL: http://localhost:8080
     depends_on:
-      - postgres
-      - redis
-      - migrate
-    restart: on-failure
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    
+
+volumes:
+  pgdata:
+

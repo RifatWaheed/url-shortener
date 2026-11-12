@@ -271,6 +271,99 @@ Ans: `.env.docker` held the password of my **real** Windows Postgres. `snip_dev`
 
 ---
 
+## 15. Named volumes: data that outlives containers
+
+**Q: How did you stop `docker compose down` from wiping the database?**
+Ans: A **named volume**. In the `postgres` service: `volumes: - pgdata:/var/lib/postgresql`, plus a top-level `volumes: pgdata:` declaration. A volume is storage that Docker manages **outside** any container. When `down` removes the Postgres container and `up` creates a new one, the new container mounts the same volume and finds its data there. Analogy: the container is an apartment and the volume is a storage unit outside the building. Demolishing the apartment doesn't touch the unit.
+Proof: I created `tJAfZvy → https://go.dev`, ran `down`, then `up -d`, and `SELECT * FROM links` still returned the row. `docker volume ls` still listed `url-shortener_pgdata`.
+
+Follow-up: *`down` vs `down -v`?*
+Ans: `down` removes containers and the network but **keeps** volumes. `down -v` also deletes the volumes, which is the deliberate "start from zero" button. I use `down -v` to test a true cold start: empty database, migrations run from scratch.
+
+Follow-up: *Named volume vs bind mount?*
+Ans: The text before the colon decides. `./migrations:/migrations` starts with `./`, so it's a **bind mount**: a folder on my PC, which I edit and the container reads. `pgdata:/var/lib/postgresql` is a plain name, so it's a **named volume** that Docker owns and stores. `docker compose config` shows the difference as `type: bind` vs `type: volume`. Bind mounts suit source and config I edit; named volumes suit data the container owns (database files). The name gets the project prefix (`url-shortener_pgdata`), so two projects can each have a `pgdata`.
+
+Follow-up: *Why mount `/var/lib/postgresql` and not `/var/lib/postgresql/data`?*
+Ans: From Postgres 18, the image keeps data in a per-major-version subfolder (`/var/lib/postgresql/18/docker`). Mounting the parent means a future major upgrade can put the 19 data folder next to the 18 one in the same volume, which `pg_upgrade --link` needs. Mounting the old `/data` path on a PG 18 image fails, and the error message explains this change.
+
+Follow-up: *What were the two volumes with random hex names in `docker volume ls`?*
+Ans: **Anonymous volumes.** An image's Dockerfile can declare a `VOLUME` (the Redis image declares `/data`). If I don't mount anything at that path, Docker creates an unnamed volume for it each time it creates a container. They pile up; `docker volume prune` removes the ones no container uses. That's why data I care about gets a name: I know what it is and I keep it on purpose.
+
+---
+
+## 16. Healthchecks
+
+**Q: What is a healthcheck and how does Docker decide "healthy"?**
+Ans: A command Docker runs **inside** the container on a schedule. Docker ignores the output and only looks at the **exit code**: `0` is a pass, anything else is a failure. The status goes `starting` → `healthy`, or to `unhealthy` after `retries` failures in a row. Analogy: the doorman doesn't understand what the tenant does. He knocks with your question and only checks whether someone answered "yes".
+
+```yaml
+healthcheck:
+  test: ["CMD", "pg_isready", "-h", "localhost", "-U", "postgres", "-d", "url_shortener"]
+  interval: 5s       # how often
+  timeout: 3s        # how long one check may take
+  retries: 5         # failures in a row before "unhealthy"
+  start_period: 10s  # grace period at boot; failures don't count
+```
+Redis: `["CMD", "redis-cli", "ping"]` with `start_period: 2s` (it starts in milliseconds and has no init phase).
+
+Follow-up: *How do you choose the `test` command?*
+Ans: (1) It must exist **inside** the image. The Postgres image includes `pg_isready` and the Redis image includes `redis-cli`. (2) It must check what dependents actually need: "accepts a connection", not just "process is alive". (3) Run it by hand first: `docker compose exec postgres pg_isready ...` then `echo $LASTEXITCODE` should print `0`.
+
+Follow-up: *How is the `test` list written?*
+Ans: Exec form, the same pattern as `ENTRYPOINT` and `command:`. Write the command as you'd type it, split at every space, quote each piece, and put `"CMD"` first. `"CMD-SHELL"` takes one string run by a shell, for when I need `||`, pipes or `$VARS`.
+
+Follow-up: *Why `-h localhost` on `pg_isready`?*
+Ans: On a fresh data folder, the Postgres entrypoint first starts a **temporary server** to create the user and database. It listens only on the Unix socket, then shuts down and the real server starts. Without `-h`, `pg_isready` checks the Unix socket, so it can report "healthy" during the temporary phase, and `migrate` would connect just as that server shuts down. `-h localhost` forces TCP, which only the real server answers. It's also the same path my API uses.
+
+---
+
+## 17. `depends_on` conditions
+
+**Q: What's the difference between the three conditions?**
+Ans:
+
+| Condition | Waits until | Use for |
+|---|---|---|
+| `service_started` (default for the short list form) | The container has started | Almost nothing. This is what caused Tuesday's race |
+| `service_healthy` | Its healthcheck passes | Long-running servers (`postgres`, `redis`) |
+| `service_completed_successfully` | It **exited with code 0** | One-shot jobs (`migrate`) |
+
+My chain: `postgres` + `redis` healthy → `migrate` runs and exits 0 → `api` starts.
+
+Follow-up: *Why is `migrate`'s condition different?*
+Ans: It's a different kind of service. Postgres and Redis are shops that stay open; you ask "are you open?" `migrate` is a contractor who builds the shelves and leaves. It's never "open", so it has no healthcheck and can never be `healthy`. The only meaningful question is "did the job finish properly?"
+
+Follow-up: *How does Compose know `migrate` "completed successfully"?*
+Ans: `migrate` doesn't report that phrase. It just exits with a code, like any program (my own `main.go:24` does `os.Exit(1)` on error). Docker stores it (`docker inspect url-shortener-migrate-1 --format "{{.State.ExitCode}}"` printed `0`). Compose reads it: `0` starts `api`; non-zero aborts with `service "migrate" didn't complete successfully` and **`api` never starts**. So migrations are a **gate**: the API can't run against a half-built schema. Exit codes are the universal language between processes and their supervisors (Docker, Compose, CI in Week 7, Kubernetes).
+
+**Before / after (cold start with `down -v`):**
+- Before: `api` started 1.3 s after `up` while Postgres was `(health: starting)`, then `connection refused` to `172.18.0.3:5432` and `Restarting (1)`, looping.
+- After: all containers created at the same time, but `api` waited ~7 s in `Created`. Then `connected to database` → `connected to redis` → `listening on` at the **first try**, within ~10 ms. `migrate` → `Exited (0)`.
+
+Open question: *`migrate` already waited for Postgres to be healthy and then finished. Why does `api` still wait for Postgres to be healthy too?*
+
+---
+
+## 18. Restart policies vs startup ordering
+
+**Q: Why did you remove `restart: on-failure`?**
+Ans:
+1. **Honest test.** With it, the stack "works" eventually either way, so I couldn't tell whether the healthchecks fixed the ordering or the restart loop hid the race again.
+2. **Wrong tool.** It was patching a startup *ordering* problem, which `service_healthy` now handles properly. It can't tell "not ready yet" from "broken" (a wrong password would crash-loop forever).
+3. **Harmful for `migrate`.** A failed migration leaves `schema_migrations` dirty, so every retry fails the same way. Without restart, it fails once, loudly, and the gate keeps the API down.
+
+Follow-up: *So are restart policies bad?*
+Ans: No, they solve a different problem: **runtime recovery** (the app crashes while running, e.g. a panic at 3 a.m.). In production I'd want `restart: unless-stopped` on the API, or the cloud host's equivalent in Week 7. Rule: **healthchecks + `depends_on` = startup order; restart policies = runtime recovery.**
+
+---
+
+## 19. Networks: one is enough here
+
+**Q: What network setup does the stack use, and when would you split it?**
+Ans: Compose creates one default network (`url-shortener_default`) and attaches every service. Its built-in DNS resolves service names (`postgres` → `172.18.0.3`), which is why `DATABASE_URL` uses `@postgres:5432`. One network is right for this stack. I'd split into several networks for **isolation**. For example, a public reverse proxy on a `frontend` network, Postgres and Redis on a `backend` network, and only the API attached to both. Then a compromised proxy can reach the API but has no route to the database. Containers only reach each other through networks they share.
+
+---
+
 ## Interview summary
 
 - **Images are stacks of content-addressed layers plus a config; containers are running instances with a thin writable layer.** Identical layers are stored once and shared.
@@ -282,3 +375,8 @@ Ans: `.env.docker` held the password of my **real** Windows Postgres. `snip_dev`
 - **Publish only what the outside needs**: the API on 8080, Postgres bound to `127.0.0.1` for dev tools, Redis not at all (no auth, and a poisoned cache redirects real users).
 - **Migrations run as a separate one-shot container.** `schema_migrations` makes reruns a no-op, and the dirty flag blocks after a partial failure.
 - **`depends_on` alone means "started", not "ready".** I saw the race myself (4× `connection refused`). Healthchecks + `condition: service_healthy` fix it; named volumes fix the data loss on `down`.
+- **State lives in named volumes, not containers.** `down` keeps `pgdata` (proved: a link survived `down` → `up`); `down -v` is the deliberate wipe. On Postgres 18+ mount `/var/lib/postgresql`.
+- **Healthchecks are judged only by exit code** and run inside the container. `pg_isready -h localhost` uses TCP so it can't pass during Postgres's init-phase temporary server.
+- **Match the condition to the type of service:** `service_healthy` for servers, `service_completed_successfully` for one-shot jobs. Migrations are a **gate**: if they fail, the API never starts.
+- **Restart policies are for runtime crashes, not startup order.** I removed `restart: on-failure`; the cold start now connects on the first try with zero errors.
+- **One network is enough here**; split into frontend/backend networks when a public-facing service must never reach the database.
