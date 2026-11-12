@@ -12,6 +12,11 @@ This plan is being worked through with Claude as a **coach, not a code vending m
 
 **Core rule — don't hand over solutions.** Do not write the learner's feature code, tests, or SQL for them unless they explicitly ask for the solution. Give the map (which stdlib functions/concepts to look up, the shape of the approach, the pitfalls to expect), then let them build it. When they're stuck, ask the question that leads them to the answer rather than giving it on the first time. Small illustrative snippets (a one-line signature, a command to run) are fine; full implementations are not.
 
+**Speed rule — glue vs core (added 2026-11-12, the learner asked to pick up the pace).** Split the work in two:
+- **Glue — Claude writes it, with explanations:** YAML (Compose, GitHub Actions), Dockerfiles, Prometheus/Grafana config, Angular scaffolding and UI boilerplate, READMEs, and updates to `week<N>-progress.md`. Write it directly into the repo, explain every non-obvious line, and add questions about it to `interview-qa.md` so the learner can defend it in an interview.
+- **Core — the learner writes it:** Go logic that answers an interview question, such as the async click writer, the token-bucket rate limiter, `/stats` aggregation, the queue consumer, idempotency/retry/DLQ, auth and tenant scoping, plus their tests and SQL. The core rule above still applies here.
+- Keep momentum: no multi-round discovery on syntax. If it's glue, write it. If it's core, give the map once and let them build.
+
 **Keep the build moving.** Follow the week-by-week plan in order. The learner
 learns by building, so most of each reply should be about what to build next.
 
@@ -43,8 +48,15 @@ Don't press on things which are not very technical , like writing README.md file
 
 **Tone:** warm, honest. Prose over bullet dumps. One focused next step at the end of each reply.
 
-### Weekly gate — viva + scoring
-When the learner says a week is done, run a viva: concept questions ("explain in your own words"), "why X over Y" questions, and scenario questions, plus a review of the actual repo/code. Score out of 100:
+### Interview Q&A bank — replaces the weekly viva (changed 2026-11-12)
+**No weekly vivas.** At the request of the learner, the weekly viva is replaced by a cumulative file, **`interview-qa.md`**, organised by topic, with model answers. After the project, the learner will use it to rehearse with a friend. When a week (or a topic within it) is finished:
+- **Add** that week's important interview questions and answers to the matching topic section in `interview-qa.md`. Create a new section if needed, and move items out of "Coming next" (§22).
+- Grounded in **their** code and decisions (📍 file references), with *Follow-up* questions an interviewer would ask, and ⭐ on the most common ones.
+- Add new bugs found to §20 (STAR material), new numbers to §19, and questions deliberately left open to §21 (unanswered).
+- Don't quiz the learner at the end of each week. Keep building. The scoring table below is kept only as a reference for the final mock interview.
+
+### (Reference only) Viva scoring
+For the final mock interview, a viva covers: concept questions ("explain in your own words"), "why X over Y" questions, and scenario questions, plus a review of the actual repo/code. Score out of 100:
 
 | Category | Weight | What it measures |
 |---|---|---|
@@ -52,6 +64,8 @@ When the learner says a week is done, run a viva: concept questions ("explain in
 | Working build | 30 | Runs and does what the week required |
 | Code craft | 20 | Structure, error handling, idiomatic Go, no footguns |
 | Tests & docs | 10 | Someone else can clone and run it; behavior is proven |
+
+Include questions on the glue Claude wrote (Dockerfiles, CI, compose): the learner must be able to explain it line by line.
 
 **Bar to advance: 80/100.** Below 80 → break down the score by category, name the weak areas, learner reworks, re-test only those areas. Don't soften the grade — a soft pass now becomes a hard rejection in a real interview.
 
@@ -164,45 +178,39 @@ You build it in layers. Each layer teaches a named skill and maps to a real inte
 
 **Goal by end of month:** Your app is containerized, auto-deployed via CI/CD to the cloud, rate-limited, and you understand the core building blocks of scalable systems.
 
+> **⚡ Accelerated plan (from 2026-11-12, Week 5 Thu onward).** Weeks 5–12 below were compressed at the learner's request: roughly 7.5 remaining weeks → about 4.5–5. A "week" is now a **sprint of sessions**, not 7 calendar days. Move to the next week as soon as the build works and `interview-qa.md` is updated. Week numbers are unchanged so `week<N>-*.md` file names stay consistent. Week 8 no longer exists as a standalone week (its topics are folded into Weeks 7, 9 and 12). Glue vs core split: see the Speed rule in the Coaching Protocol. DSA stays at 2 problems per week but never blocks build progress.
+
 ### Week 5 — Docker
-- **Mon:** Images vs containers, layers, Dockerfile basics. Containerize the Go API (multi-stage build).
-- **Tue:** docker-compose: API + Postgres + Redis together with one command.
-- **Wed:** Volumes, networks, env config, healthchecks.
-- **Thu:** Image size optimization; `.dockerignore`; why small images matter.
+- **Mon:** ✅ Images vs containers, layers, Dockerfile basics. Containerize the Go API (multi-stage build).
+- **Tue:** ✅ docker-compose: API + Postgres + Redis together with one command.
+- **Wed:** ✅ Volumes, networks, env config, healthchecks.
+- **Thu (1 session):** Image size: `-ldflags="-s -w"` + switch the runtime base to distroless. Scratch vs distroless vs alpine tradeoffs go in the notes (no side-by-side builds).
 - **Fri:** DSA: recursion/trees intro (2 problems).
-- **Sat:** Full `docker-compose up` brings the whole stack alive. Document it in README.
-- **Sun:** Push. Screenshot the running stack.
+- **Sat → compressed:** Claude writes the README "run with Docker" section and adds Week 5 Thu to `interview-qa.md`.
 - **Ship:** Whole app runs anywhere with one command.
 
-### Week 6 — Analytics + rate limiting
-- **Mon:** Design the click-event model. Record every redirect (timestamp, referrer, UA, geo-ish).
-- **Tue:** Async writes — don't block the redirect on analytics writes. Fire-and-forget with a channel/buffer.
-- **Wed:** Rate limiting algorithms: fixed window, sliding window, token bucket. Pick token bucket.
-- **Thu:** Implement rate limiting in Redis (per-IP / per-key).
+### Week 6 — Analytics + rate limiting (full depth, core = learner)
+- **S1:** Design the click-event model + migration. Record every redirect (timestamp, referrer, UA). ~~geo-ish~~ cut.
+- **S2:** Async writes: don't block the redirect on analytics writes. Buffered channel + background writer, with graceful-shutdown drain.
+- **S3:** Rate limiting algorithms (fixed window, sliding window, token bucket) explained in notes → implement token bucket in Redis (per-IP), as middleware.
+- **S4:** `/stats/:code` endpoint aggregating clicks. Write the "Design a rate limiter" answer.
 - **Fri:** DSA: binary search + trees (2 problems).
-- **Sat:** Build a `/stats/:code` endpoint aggregating clicks. Write the "Design a rate limiter" answer.
-- **Sun:** Push, update README with the new architecture diagram.
+- Claude updates the README, the architecture diagram and `interview-qa.md`.
 - **Ship:** Tracked analytics + working rate limiter + two more system-design answers.
 
-### Week 7 — CI/CD + cloud deployment
-- **Mon:** CI concepts. Set up GitHub Actions: run tests on every push.
-- **Tue:** Add linting, build, and a Docker image build to the pipeline.
-- **Wed:** Push image to a registry (GHCR). Understand CD vs CI.
-- **Thu:** Deploy to a cheap host (Fly.io, Railway, or a $5 VPS). Get a real URL.
-- **Fri:** DSA: hashmap-heavy problems (2). 
-- **Sat:** Wire up automated deploy on merge to `main`. Add a managed Postgres.
-- **Sun:** Verify the live site. Push.
+### Week 7 — CI/CD + cloud deployment (glue = Claude, learner explains every step)
+- **S1:** One GitHub Actions pipeline: test → lint → build → Docker image → push to GHCR. Claude writes the workflow; learner learns CI vs CD and can walk through it step by step.
+- **S2:** Deploy to a cheap host (Fly.io or Railway) with managed Postgres + Redis, migrations as a release step, and automatic deploy on merge to `main`. Get a real URL.
+- **Notes (folded from old Week 8):** load balancing, horizontal vs vertical scaling, why the API is stateless, runtime restart/recovery on the host.
+- **Fri:** DSA: hashmap-heavy problems (2).
 - **Ship:** A **live, public URL** with automated deploys. This is a massive resume line.
 
-### Week 8 — System design fundamentals
-- **Mon:** Load balancing, horizontal vs vertical scaling, statelessness (why your API is already stateless).
-- **Tue:** DB scaling: replication, read replicas, sharding basics, when to reach for each.
-- **Wed:** Caching layers, CDNs, consistency vs availability (CAP in plain English).
-- **Thu:** Queues & async, idempotency, back-pressure.
-- **Fri:** DSA: review week — redo 3 problems you found hard.
-- **Sat:** Take a classic prompt (e.g., "design a news feed" or "design a rate-limited API gateway") and whiteboard it for 45 min, timed.
-- **Sun:** Write the answer up. Push.
-- **Ship:** A repeatable mental framework for system-design interviews.
+### ~~Week 8 — System design fundamentals~~ → folded into other weeks
+No standalone week. Where each topic went:
+- Load balancing, scaling, statelessness → Week 7 notes.
+- Queues, idempotency, back-pressure → Week 9 (built there).
+- DB scaling (replication, read replicas, sharding), caching layers/CDNs, CAP → Week 12 Mon notes, tied to Snip's actual design.
+- The 45-min timed whiteboard of a *new* prompt (news feed / API gateway) → Week 12 Mon.
 
 ---
 
@@ -210,38 +218,30 @@ You build it in layers. Each layer teaches a named skill and maps to a real inte
 
 **Goal by end of month:** A complete, impressive full-stack product + you're interview-ready across system design, coding, and behavioral.
 
-### Week 9 — Message queue + Python worker (your AI/Python slice)
-- **Mon:** Why queues: decoupling, spikes, retries. Add Redis Streams / NATS / RabbitMQ.
-- **Tue:** Publish click events to the queue instead of writing inline.
-- **Wed:** Build a **Python** consumer that processes events (aggregations, and a simple "anomaly/insight" step — this is your AI-adjacent story).
-- **Thu:** Idempotency + retry + dead-letter handling.
+### Week 9 — Message queue + Python worker (your AI/Python slice) — **start applying to jobs this week**
+- **S1:** Why queues (decoupling, spikes, retries; back-pressure in notes). Use **Redis Streams**, which is already in the stack, so no new infra. Publish click events to the stream instead of writing inline.
+- **S2:** **Python** consumer with consumer groups: aggregations into the analytics store. Claude writes the Python project scaffolding/Dockerfile; learner writes the consume/ack logic.
+- **S3:** Idempotency + retry + dead-letter handling. End-to-end: click → stream → Python worker → analytics store → `/stats`.
+- "Anomaly/insight" step: **optional**, 1 hour max, only if time allows.
 - **Fri:** DSA: graphs intro (2 problems).
-- **Sat:** End-to-end: click → queue → Python worker → analytics store → `/stats`. 
-- **Sun:** Push. Update architecture diagram.
 - **Ship:** A real event-driven pipeline spanning Go + Python.
 
-### Week 10 — Auth, multi-tenancy, security, observability
-- **Mon:** Auth: JWT vs sessions, hashing (bcrypt/argon2). Add signup/login.
-- **Tue:** Multi-tenancy: each user sees only their links. Row-level scoping.
-- **Wed:** Security basics: OWASP top issues, SQL injection (why you're safe), secrets management.
-- **Thu:** Observability: metrics (Prometheus), a dashboard (Grafana), request tracing IDs in logs.
+### Week 10 — Auth, multi-tenancy, observability
+- **S1:** Auth: JWT vs sessions (notes), bcrypt. Signup/login + auth middleware.
+- **S2:** Multi-tenancy: each user sees only their links (scoping in the repository layer). Security basics (OWASP, why parameterized queries make SQL injection impossible here, secrets management) → **notes only**.
+- **S3:** Observability: request IDs in slog logs (learner), Prometheus `/metrics` with latency/error/throughput (learner instruments), Grafana dashboard + compose wiring (Claude configures).
 - **Fri:** DSA: graphs BFS/DFS (2 problems).
-- **Sat:** Wire monitoring; create one meaningful dashboard (latency, error rate, throughput).
-- **Sun:** Push.
 - **Ship:** Secure, multi-tenant app you can *observe* in production.
 
-### Week 11 — Angular dashboard + real-time (your home turf)
-- **Mon:** Build the dashboard shell in Angular; connect to your API with auth.
-- **Tue:** Charts for click analytics (use a charting lib). Make it look genuinely nice.
-- **Wed:** Real-time updates via WebSockets/SSE — live click counter.
-- **Thu:** Polish UX, loading/error states, responsive layout.
-- **Fri:** DSA: dynamic programming intro (1–2 problems — just exposure).
-- **Sat:** Deploy the frontend; connect everything live.
-- **Sun:** Record a 2-min demo video. Push. Write a great README with the architecture diagram and your metrics.
-- **Ship:** A polished, live, full-stack SaaS demo. This is your headline portfolio piece.
+### Week 11 — Angular dashboard (your home turf, so compressed hardest)
+- **S1:** Claude scaffolds the Angular app (login, links list, stats chart with a charting lib); learner wires it to the API with auth and reviews it.
+- **S2:** Deploy the frontend; connect everything live. Claude writes the final README with the architecture diagram and metrics.
+- Optional if time allows: SSE live click counter, 2-min demo video.
+- **Fri:** DSA: dynamic programming intro (1–2 problems, just exposure).
+- **Ship:** A live, full-stack SaaS demo. This is your headline portfolio piece.
 
-### Week 12 — Interview prep sprint + job hunt launch
-- **Mon:** System design mocks: do "Design TinyURL," "rate limiter," "analytics" out loud, timed. You've *built* these.
+### Week 12 — Interview prep sprint + job hunt
+- **Mon:** System design mocks: "Design TinyURL", "rate limiter", "analytics" out loud and timed (you've *built* these), plus one 45-min whiteboard of a new prompt. Notes on DB scaling (replicas, sharding), CDNs and CAP (folded from old Week 8).
 - **Tue:** Behavioral: write STAR stories (a conflict, a failure, a thing you led, a hard bug). 5–6 stories cover most questions.
 - **Wed:** Resume rewrite around impact + this project. LinkedIn/GitHub polish.
 - **Thu:** DSA: 3 mixed medium problems under time pressure.
@@ -272,13 +272,13 @@ If you can answer all of these *and point at code you wrote*, you interview like
 
 ---
 
-## Job hunt & remote strategy (start in Week 11, don't wait until you feel "ready")
+## Job hunt & remote strategy (start in Week 9, don't wait until you feel "ready")
 
 - **Where to look for remote:** LinkedIn (filter Remote), We Work Remotely, RemoteOK, Wellfound (AngelList), Toptal (contract, well-paid), and company career pages directly. For higher pay, target product companies and funded startups over agencies.
 - **Positioning:** Lead with ".NET + Angular full-stack engineer expanding into Go, cloud-native backends, and system design." Your existing stack is an *asset* — plenty of well-paying .NET/Angular roles exist; you're just adding the senior signals.
 - **Resume:** Bullet points are *impact*, not tasks. "Reduced redirect latency 8x by adding a Redis cache layer" beats "worked on caching."
 - **Referrals > cold applications.** One warm intro is worth 20 cold applies. Message people kindly, mention the specific role.
-- **Apply while unfinished.** Interviews are the best teacher. Start applying at week 11 even if the project isn't perfect.
+- **Apply while unfinished.** Interviews are the best teacher. Start applying at week 9 even if the project isn't perfect.
 - **AI tooling as a skill:** mention you use AI coding tools to move faster and review their output critically — that's a senior signal now, not a weakness.
 
 ---

@@ -93,12 +93,12 @@ Read first:
 - `-ldflags="-s -w"`: what the symbol table and DWARF debug info are, and what you lose by stripping them.
 - Base images `scratch` vs distroless (`gcr.io/distroless/static`) vs `alpine`: what's inside each, and what you can no longer do (no shell for `docker exec`, no `wget` for a healthcheck, CA certificates, timezone data, how to run as non-root without `adduser`).
 
-Build:
-1. Add `-ldflags="-s -w"` to the `go build` in `Dockerfile` and compare the size against the current 41 MB.
-2. Pick a runtime base and justify the tradeoff in notes.
+Build (1 session, accelerated plan; the Dockerfile is glue, so Claude writes it and I explain it):
+1. Add `-ldflags="-s -w"` to the `go build` in `Dockerfile` and switch the runtime base to distroless. Compare against the current 41 MB.
+2. Scratch vs distroless vs alpine tradeoffs go in the notes.
 3. Rerun the cold-start test to confirm the stack still comes up healthy.
 
-Then **Saturday**: full `docker compose up` documented in README.
+Then: Claude writes the README "run with Docker" section → add Week 5 Thu to `interview-qa.md` → Week 6.
 
 ---
 
